@@ -39,13 +39,12 @@ public class Segmentation {
 		String fn = "C:\\Users\\zj125135\\Downloads\\语料库\\词性标注%40人民日报199801.txt";
 		String output = "C:\\Users\\zj125135\\Downloads\\语料库\\model";
 		Segmentation model = new Segmentation();
-		model.generate(fn);
-		model.outputModel(output);
-		
-		
-//		GenModel model2 = new GenModel();
-//		model2.loadModel(output);
-//		System.out.println("load success");
+//		model.generate(fn);
+//		model.outputModel(output);
+		model.loadModel(output);
+//		String sentense = model.split("法国总统马克龙空降核潜艇进行参观");
+		String sentense = model.split("在１９９８年来临之际，我十分高兴地通过中央人民广播电台、中国国际广播电台和中央电视台，向全国各族人民，向香港特别行政区同胞、澳门和台湾同胞、海外侨胞，向世界各国的朋友们，致以诚挚的问候和良好的祝愿");
+		System.out.println(sentense);
 	}
 
 	static class CharStatus {
@@ -76,9 +75,8 @@ public class Segmentation {
 			logger.info("begin to process data");
 			while ((line = reader.readLine()) != null) {
 				// transfer one line to status set
-				// such as a sentence: "19980101-01-001-001/m 迈向/v 充满/v 希望/n 的/u
-				// 新/a 世纪/n ——/w 一九九八年/t 新年/t 讲话/n （/w 附/v 图片/n １/m 张/q ）/w "
-				// then we get "BE BE BE S S BE S BMMME BE BE S S BE S S S"
+				// such as a sentence: "19980101-01-001-001/m 迈向/v 充满/v 希望/n 的/u 新/a 世纪/n ——/w 一九九八年/t 新年/t 讲话/n （/w 附/v 图片/n １/m 张/q ）/w "
+				// then we get status list: "BE BE BE S S BE S BMMME BE BE S S BE S S S"
 				List<CharStatus> status = generateStatusList(line);
 				// iterate all status and update vector A, vector B
 				updateAB(status);
@@ -282,5 +280,102 @@ public class Segmentation {
 				e.printStackTrace();
 			}
 		}
+	}
+	/**
+	 * use forward procedure algorithm to split sentense
+	 * @param sentense
+	 * @return
+	 */
+	public String split(String sentense) {
+		int T = sentense.length();
+		//there are only 4 status including B M E S
+		//Viterbi matrix V
+		double[][] v = new double[4][T];
+		//route matrix R
+		int[][] r = new int[4][T-1];
+		double[] initialProb = getInitialProb();
+		
+		char[] charSet = sentense.toCharArray();
+		String[] csSet = new String[charSet.length];
+		for (int i = 0; i < charSet.length; i++) {
+			csSet[i] = charSet[i] + "";
+		}
+		
+		//emission probability
+		Map<String, Double> empbB = model.B.get(0);
+		Map<String, Double> empbM = model.B.get(1);
+		Map<String, Double> empbE = model.B.get(2);
+		Map<String, Double> empbS = model.B.get(3);
+		
+		double defaultPrb = 1.0/1000000000;
+		
+		//calc initial viterbi vector
+		v[0][0] = initialProb[0] * empbB.getOrDefault(csSet[0], defaultPrb);
+		v[1][0] = initialProb[1] * empbM.getOrDefault(csSet[0], defaultPrb);
+		v[2][0] = initialProb[2] * empbE.getOrDefault(csSet[0], defaultPrb);
+		v[3][0] = initialProb[3] * empbS.getOrDefault(csSet[0], defaultPrb);
+		
+		for (int i = 1; i < T; i++) {
+			//Status B: R[0][i] = max{P(E->B)*R[2][i-1], P(S->B)*R[3][i-1]} * empbB(csSet[i])
+			double peb_r = model.A[2][0] * v[2][i-1];
+			double psb_r = model.A[3][0] * v[3][i-1];
+			v[0][i] = (peb_r > psb_r ? peb_r : psb_r) * empbB.getOrDefault(csSet[i], defaultPrb);
+			r[0][i - 1] = peb_r > psb_r ? 2 : 3;
+					
+			//Status M: R[1][i] = max{P(B->M)*R[0][i-1], P(M->M)*R[1][i-1]} * empbM(csSet[i])
+			double pbm_r = model.A[0][1] * v[0][i-1];
+			double pmm_r = model.A[1][1] * v[1][i-1];
+			v[1][i] = (pbm_r > pmm_r ? pbm_r : pmm_r) * empbM.getOrDefault(csSet[i], defaultPrb);
+			r[1][i - 1] = pbm_r > pmm_r ? 0 : 1;
+			
+			//Status E: R[2][i] = max{P(B->E)*R[0][i-1], P(M->E)*R[1][i-1]} * empbE(csSet[i])
+			double pbe_r = model.A[0][2] * v[0][i-1];
+			double pme_r = model.A[1][2] * v[1][i-1];
+			v[2][i] = (pbe_r > pme_r ? pbe_r : pme_r) * empbE.getOrDefault(csSet[i], defaultPrb);
+			r[2][i - 1] = pbe_r > pme_r ? 0 : 1;
+			
+			//Status S: R[3][i] = max{P(E->S)*R[2][i-1], P(S->S)*R[3][i-1]} * empbS(csSet[i])
+			double pes_r = model.A[2][3] * v[2][i-1];
+			double pss_r = model.A[3][3] * v[3][i-1];
+			v[3][i] = (pes_r > pss_r ? pes_r : pss_r) * empbS.getOrDefault(csSet[i], defaultPrb);
+			r[3][i - 1] = pes_r > pss_r ? 2 : 3;
+		}
+		
+		//split sentense
+		//find the max probability
+		int maxIdx = -1;
+		double maxProb = 0;
+		for (int i = 0; i < 4; i++) {
+			if (v[i][T-1] > maxProb) {
+				maxProb = v[i][T-1];
+				maxIdx = i;
+			}
+		}
+		StringBuilder sb = new StringBuilder();
+		//when the status is E or S, then write a slash
+		//retreat the search route
+		int lastIdx = maxIdx;
+		for (int i = T - 1; i > 0; i--) {
+			if (lastIdx == 2 || lastIdx == 3) {
+				sb.insert(0, '/');
+			}
+			sb.insert(0, charSet[i]);
+			lastIdx = r[lastIdx][i-1];
+		}
+		if (lastIdx == 2 || lastIdx == 3) {
+			sb.insert(0, '/');
+		}
+		sb.insert(0, charSet[0]);
+		return sb.toString();
+	}
+
+	
+	
+	private double[] getInitialProb() {
+		double[] initialProb = new double[4];
+		for (int i = 0; i < initialProb.length; i++) {
+			initialProb[i] = 1.0/initialProb.length;
+		}
+		return initialProb;
 	}
 }

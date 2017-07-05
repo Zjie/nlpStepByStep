@@ -11,7 +11,7 @@ public class HMMModel implements Serializable {
 	private static final long serialVersionUID = -4348736157423653748L;
 	double[][] A;
 	// vector A is a state transition matrix
-	// B M E S
+	//   B M E S
 	// B 0 1 1 0
 	// M 0 1 1 0
 	// E 1 0 0 1
