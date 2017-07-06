@@ -16,12 +16,17 @@ public class HMMModel implements Serializable {
 	// M 0 1 1 0
 	// E 1 0 0 1
 	// S 1 0 0 1
+	
 	List<Map<String, Double>> B;
+	double[] sumB;
 	public HMMModel() {
 		A = new double[4][4];
 		B = new ArrayList<Map<String, Double>>(4);
+		sumB = new double[4];
 		for (int i = 0; i < 4; i++) {
+			sumB[i] = 0.0;
 			B.add(new HashMap<String, Double>());
+			
 			for (int j = 0; j < 4; j++) {
 				A[i][j] = 0;
 			}
